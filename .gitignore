@@ -1,0 +1,41 @@
+# Artefactos de compilación
+game/target/
+dist/
+
+# Assets originales del juego (no se redistribuyen)
+assets/
+work/
+*.zip
+
+# Material derivado del binario original
+docs/decomp/
+docs/kwiks2.asm
+docs/gameplay_nivel1.gif
+
+# Snapshots de análisis de REA
+kwiks.snapshot*.json
+analyze.json
+
+# Symlinks de bibliotecas del sistema (específicos de cada máquina)
+game/lib/
+
+# Rust / editor
+**/*.rs.bk
+Cargo.lock.orig
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# Launcher cache
+.launcher_cache/
+
+# Launcher build environment
+.venv-launcher/
+launcher/build/
+launcher/dist/
+launcher/*.spec

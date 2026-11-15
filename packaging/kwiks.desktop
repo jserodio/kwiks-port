@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Kwiks
+Comment=Port moderno de Kwiks (1998), un clon de QIX
+Exec=kwiks
+Icon=kwiks
+Terminal=false
+Categories=Game;ArcadeGame;
+Keywords=qix;arcade;retro;

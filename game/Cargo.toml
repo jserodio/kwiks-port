@@ -1,0 +1,18 @@
+[package]
+name = "kwiks"
+version = "0.1.0"
+edition = "2021"
+description = "Port moderno de Kwiks (1998) - M0: shell SDL3 con assets originales"
+
+[dependencies]
+sdl3 = "0.22"
+image = "0.25"
+anyhow = "1"
+openmpt = "0.3"
+hound = "3"
+
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+opt-level = 3
