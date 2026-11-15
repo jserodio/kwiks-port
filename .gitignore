@@ -39,3 +39,6 @@ __pycache__/
 launcher/build/
 launcher/dist/
 launcher/*.spec
+
+# Windows cross-compile libraries (downloaded by tools/prepare_winlibs.sh)
+.winlibs/
