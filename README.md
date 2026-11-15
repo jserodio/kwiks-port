@@ -13,53 +13,73 @@ and **multiple resolutions**, without changing the original gameplay.
 
 ## Getting started
 
-### 1. Launcher (recommended)
+### I just want to play
 
-The launcher does the whole setup for you: pick the original game, extract its
-assets, build the port and run it.
+**Windows**
+
+1. Download **`kwiks-<version>-windows-x86_64.zip`** from the
+   [releases](../../releases) page.
+2. Unpack it anywhere.
+3. Run **`kwiks.exe`**. The libraries it needs are already included.
+
+You still need the original game files — see [Original game files](#original-game-files).
+
+**Linux**
+
+1. Download **`kwiks-<version>-linux-x86_64.tar.gz`** from the releases page.
+2. Unpack it and run `./kwiks`.
+
+Or use the [launcher](#the-launcher), which does everything for you.
+
+### Original game files
+
+This project **does not include** the game's graphics, music or sound: they
+belong to their authors. Bring your own copy of **Kwiks (1998)** — freeware by
+DIGITAL Nightmares — and let the launcher install them, or extract them
+yourself:
 
 ```bash
-python3 launcher/kwiks_launcher.py
-```
-
-Or run the packaged binary from the [releases](../../releases) page.
-
-### 2. Manual setup
-
-#### 2.1 Original assets
-
-This repository **does not include** the game's assets (graphics, music and
-sound belong to their authors). You need a copy of **Kwiks (1998)** — freeware by
-DIGITAL Nightmares — and extract them yourself:
-
-```bash
-# Put Kwiks_Win_EN.zip somewhere and extract the .one containers
 python3 tools/extract_one.py /path/to/data.one  assets/data
 python3 tools/extract_one.py /path/to/audio.one assets/audio
-
-# Optional: convert the .PIX files to PNG for inspection
-python3 tools/pix2png.py --all assets/data assets/png
 ```
 
-The scripts live in `tools/` and the container and `.PIX` formats are documented
-in `docs/PIX_FORMAT.md`.
+The `.one` container and the `.PIX` image format are documented in
+`docs/PIX_FORMAT.md`.
 
-#### 2.2 Build and run
+### The launcher
+
+The launcher does the whole setup for you: choose the original game, and it
+installs its files, builds the port and starts it.
+
+| | |
+|---|---|
+| Windows | run `kwiks-launcher.exe` from `kwiks-launcher-windows-x86_64.tar.gz` |
+| Linux | run `./kwiks-launcher` from `kwiks-launcher-linux-x86_64.tar.gz` |
+| From source | `python3 launcher/kwiks_launcher.py` |
+
+If something goes wrong, run `kwiks-launcher --diagnose` and include the output
+when asking for help. `kwiks-launcher --setup <game.zip>` does the same without
+a window.
+
+---
+
+## Building from source
+
+You need the [Rust toolchain](https://rustup.rs) and the SDL3, SDL3_image and
+libopenmpt libraries.
+
+### Linux
 
 ```bash
-cd game
-cargo run --release
-```
-
-**Runtime dependencies** (Linux): `SDL3`, `SDL3_image` and `libopenmpt` as
-shared libraries. On Fedora/Bazzite:
-
-```bash
-sudo dnf install sdl3 sdl3_image libopenmpt
+# Fedora / Bazzite
+sudo dnf install SDL3-devel SDL3_image-devel libopenmpt-devel
+# Debian / Ubuntu (25.04+)
+sudo apt install libsdl3-dev libsdl3-image-dev libopenmpt-dev
 ```
 
 If your distribution ships only the runtime (no headers or `.pc` files), create
-the symlinks the `build.rs` expects:
+the symlinks the `build.rs` expects — the launcher does this for you
+automatically:
 
 ```bash
 mkdir -p game/lib
@@ -68,7 +88,35 @@ ln -sf /usr/lib64/libSDL3_image.so.0 game/lib/libSDL3_image.so
 ln -sf /usr/lib64/libopenmpt.so.0    game/lib/libopenmpt.so
 ```
 
-The launcher can create these for you (step 2 of its window).
+```bash
+cd game
+cargo run --release
+```
+
+### Windows
+
+Two ways to build the game:
+
+**On Windows** — install the libraries with [vcpkg](https://vcpkg.io), copy the
+`.lib` and `.dll` files into `game/lib`, then:
+
+```powershell
+cd game
+cargo build --release
+```
+
+**Cross-compile from Linux** with MinGW (this is what
+`package.sh windows-local` does):
+
+```bash
+brew install mingw-w64            # or: pacman -S mingw-w64-x86_64-gcc
+rustup target add x86_64-pc-windows-gnu
+./tools/prepare_winlibs.sh        # downloads SDL3, SDL3_image and libopenmpt
+./package.sh windows-local        # -> dist/kwiks-<version>-windows-x86_64.zip
+```
+
+`tools/prepare_winlibs.sh` also generates the MinGW import library for
+libopenmpt, because openmpt.org does not publish one.
 
 ---
 
@@ -140,9 +188,13 @@ cargo test -- --ignored          # reference screenshots
 Package:
 
 ```bash
-./package.sh linux               # dist/kwiks-<version>-linux-x86_64.tar.gz
-./package.sh launcher            # dist/kwiks-launcher-linux-x86_64.tar.gz
+./package.sh linux           # dist/kwiks-<version>-linux-x86_64.tar.gz
+./package.sh windows-local   # dist/kwiks-<version>-windows-x86_64.zip
+./package.sh launcher        # dist/kwiks-launcher-<os>-x86_64.tar.gz
 ```
+
+Releases are built automatically by GitHub Actions
+(`.github/workflows/release.yml`) whenever a `v*` tag is pushed.
 
 ---
 
