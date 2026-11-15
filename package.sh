@@ -33,10 +33,10 @@ package_game() {
 
     echo "==> Assembling $out"
     rm -rf "$out"
-    mkdir -p "$out/assets"
+    mkdir -p "$out"
     cp "$BIN" "$out/"
-    cp -r "$ROOT/assets/data" "$out/assets/data"
-    cp -r "$ROOT/assets/audio" "$out/assets/audio"
+    # The original assets are not redistributed: the user brings their own
+    # copy and extracts it with the launcher or tools/extract_one.py.
     cp "$ROOT/README.md" "$out/"
 
     echo "==> Compressing"

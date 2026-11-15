@@ -1,0 +1,163 @@
+name: Build and release
+
+# Builds the game and the launcher for Linux and Windows, then attaches both
+# to the GitHub release of the tag that triggered the run.
+#
+# Triggered by pushing a tag such as v0.2.0, or manually from the Actions tab.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ---------------------------------------------------------------- Linux
+  build-linux:
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system libraries
+        run: |
+          dnf install -y gcc git SDL3-devel SDL3_image-devel libopenmpt-devel \
+                         python3 python3-tk python3-pip tar
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build the game
+        run: ./package.sh linux
+
+      - name: Build the launcher
+        run: |
+          python3 -m venv .venv-launcher
+          .venv-launcher/bin/pip install --quiet pyinstaller
+          PYTHON="$PWD/.venv-launcher/bin/python" ./package.sh launcher
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  # -------------------------------------------------------------- Windows
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # vcpkg ships SDL3, SDL3_image and libopenmpt with their import
+      # libraries; the build looks for those in game/lib.
+      - name: Install system libraries (vcpkg)
+        shell: bash
+        run: vcpkg install sdl3:x64-windows sdl3-image:x64-windows libopenmpt:x64-windows
+
+      - name: Stage the libraries for the build
+        shell: bash
+        run: |
+          VCPKG="$VCPKG_INSTALLATION_DIR/installed/x64-windows"
+          mkdir -p game/lib
+          cp "$VCPKG"/lib/*.lib game/lib/
+          # The Rust crates link "SDL3", "SDL3_image" and "openmpt".
+          [ -f game/lib/libopenmpt.lib ] && cp game/lib/libopenmpt.lib game/lib/openmpt.lib
+          ls -la game/lib
+
+      - name: Build the game
+        shell: bash
+        run: |
+          cargo build --release
+          ls -la game/target/release/*.exe
+
+      - name: Package the game
+        shell: bash
+        run: |
+          VCPKG="$VCPKG_INSTALLATION_DIR/installed/x64-windows"
+          OUT="dist/kwiks-${GITHUB_REF_NAME}-windows-x86_64"
+          mkdir -p "$OUT"
+          cp game/target/release/kwiks.exe "$OUT/"
+          cp "$VCPKG"/bin/*.dll "$OUT/"
+          cp README.md "$OUT/"
+          (cd dist && 7z a -ttar "kwiks-${GITHUB_REF_NAME}-windows-x86_64.tar" \
+              "kwiks-${GITHUB_REF_NAME}-windows-x86_64" \
+            && 7z a -tgzip "kwiks-${GITHUB_REF_NAME}-windows-x86_64.tar.gz" \
+              "kwiks-${GITHUB_REF_NAME}-windows-x86_64.tar")
+          ls -la dist/
+
+      - name: Build the launcher
+        shell: bash
+        run: |
+          python -m pip install --quiet pyinstaller
+          python -m PyInstaller --noconfirm --clean --onefile --windowed \
+            --name kwiks-launcher launcher/kwiks_launcher.py
+          OUT="dist/kwiks-launcher-windows-x86_64"
+          mkdir -p "$OUT/game/src" "$OUT/game/tests" "$OUT/tools"
+          cp launcher/dist/kwiks-launcher.exe "$OUT/"
+          cp game/Cargo.toml game/Cargo.lock game/build.rs "$OUT/game/"
+          cp -r game/src/. "$OUT/game/src/"
+          cp -r game/tests/. "$OUT/game/tests/"
+          cp -r tools/. "$OUT/tools/"
+          cp README.md "$OUT/"
+          (cd dist && 7z a -ttar kwiks-launcher-windows-x86_64.tar kwiks-launcher-windows-x86_64 \
+            && 7z a -tgzip kwiks-launcher-windows-x86_64.tar.gz kwiks-launcher-windows-x86_64.tar)
+          ls -la dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  # -------------------------------------------------------------- Release
+  release:
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect files
+        run: |
+          mkdir -p upload
+          find artifacts -name '*.tar.gz' -exec cp {} upload/ \;
+          ls -la upload
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" --verify-tag \
+            --title "Kwiks ${GITHUB_REF_NAME}" \
+            --notes "Modern port of Kwiks (1998).
+
+          Downloads below: the launcher for your platform. Unpack it, run the
+          launcher, choose the original game ZIP and press **Set up and build**.
+
+          The original game files are not included: bring your own copy of
+          Kwiks (1998, freeware by DIGITAL Nightmares)." \
+            || gh release edit "${GITHUB_REF_NAME}" --draft=false
+          gh release upload "${GITHUB_REF_NAME}" upload/* --clobber

@@ -122,15 +122,15 @@ pub enum Language {
 }
 
 impl Default for Language {
-    /// `KWIKS_LANG=es|en` (default `es`). **[I]**
+    /// `KWIKS_LANG=es|en` (default `en`). **[I]**
     fn default() -> Self {
         match std::env::var("KWIKS_LANG")
             .unwrap_or_default()
             .to_ascii_lowercase()
             .as_str()
         {
-            "en" | "englisch" | "english" => Language::En,
-            _ => Language::Es,
+            "es" | "spanish" | "espanol" | "español" => Language::Es,
+            _ => Language::En,
         }
     }
 }
@@ -1218,11 +1218,11 @@ fn num(value: u32, width: usize) -> String {
 /// EN follows `INFO.PIX` literally ("Filled: % Level: Points: Lives:"); DE
 /// ("Fertig: % Level: Punkte: Leben:"); the `Es` variant is our own
 /// translation. **[I]**
-fn hud_labels(lang: Language) -> [&'static str; 4] {
-    match lang {
-        Language::Es => ["HECHO:", "NIVEL:", "PUNTOS:", "VIDAS:"],
-        Language::En => ["FILLED:", "LEVEL:", "POINTS:", "LIVES:"],
-    }
+/// HUD labels. They are always in English: the language switch only changes
+/// the in-game art (``MENU*``/``EMENU*``, ``MAKERS``/``EMAKERS``) and the help
+/// panel.
+fn hud_labels(_lang: Language) -> [&'static str; 4] {
+    ["FILLED:", "LEVEL:", "POINTS:", "LIVES:"]
 }
 
 /// Help panel (F1) or title "about".
