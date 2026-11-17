@@ -291,7 +291,7 @@ def diagnose() -> None:
     for d in core.check_dependencies():
         print(f"    [{'OK' if d.ok else 'MISSING'}] {d.name}: {d.detail}")
         if d.fix_hint:
-            print(f"           → {d.fix_hint}")
+            print(f"           -> {d.fix_hint}")
     missing = core.missing_link_shims()
     print(f"  library links to create: {missing if missing else 'none'}")
     binary = core.built_binary()
@@ -321,6 +321,12 @@ def setup(source: Optional[str]) -> int:
 
 
 def main() -> None:
+    # The Windows console uses a legacy code page; never crash on it.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
     args = sys.argv[1:]
     if args and args[0] in ("--diagnose", "-d"):
         diagnose()

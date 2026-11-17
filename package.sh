@@ -86,12 +86,19 @@ package_launcher() {
 
     local exe="kwiks-launcher"
     [ -f "$LAUNCHER/dist/kwiks-launcher.exe" ] && exe="kwiks-launcher.exe"
+    assemble_launcher "$out" "$LAUNCHER/dist/$exe"
+}
+
+# Package a launcher binary that has already been built (for example with
+# PyInstaller under Wine) together with the sources it needs to build the port.
+assemble_launcher() {
+    local out="$1"
+    local binary="$2"
 
     echo "==> Assembling $out"
     rm -rf "$out"
     mkdir -p "$out/game/src" "$out/game/tests" "$out/tools"
-    cp "$LAUNCHER/dist/$exe" "$out/"
-    # The launcher needs the project to build: ship the sources and tools.
+    cp "$binary" "$out/"
     cp "$GAME/Cargo.toml" "$GAME/Cargo.lock" "$GAME/build.rs" "$out/game/"
     cp -r "$GAME/src/." "$out/game/src/"
     cp -r "$GAME/tests/." "$out/game/tests/"
@@ -103,13 +110,36 @@ package_launcher() {
     echo "    $DIST/$(basename "$out").tar.gz"
 }
 
+# Build the Windows launcher from Linux/any host using Wine + a Windows Python
+# that has tkinter (PyInstaller cannot cross-compile on its own).
+package_launcher_windows() {
+    local out="$DIST/kwiks-launcher-windows-x86_64"
+    local prefix="${WINEPREFIX:-$ROOT/.wineprefix}"
+    local wine="${WINE_CMD:-flatpak run --env=WINEPREFIX=$prefix --env=WINEDEBUG=-all --command=wine org.winehq.Wine}"
+    local py="${WINDOWS_PYTHON:-C:\\Python312\\python.exe}"
+    local exe="$LAUNCHER/kwiks-launcher.exe"
+
+    if [ -f "$exe" ]; then
+        echo "==> Using the existing $exe"
+    else
+        echo "==> Freezing the launcher with PyInstaller under Wine"
+        (cd "$LAUNCHER" && rm -rf build dist && \
+            $wine "$py" -m PyInstaller --noconfirm --clean --onefile --windowed \
+                --name kwiks-launcher kwiks_launcher.py && \
+            cp "dist/kwiks-launcher.exe" "$exe")
+    fi
+
+    assemble_launcher "$out" "$exe"
+}
+
 case "$PLATFORM" in
     linux)          build_native ;;
     windows)        build_windows_native ;;
     windows-local)  build_windows_cross ;;
-    launcher)       package_launcher ;;
+    launcher)          package_launcher ;;
+    launcher-windows)  package_launcher_windows ;;
     all)            build_native; package_launcher ;;
-    *) echo "usage: $0 [linux|windows|windows-local|launcher|all]" >&2; exit 1 ;;
+    *) echo "usage: $0 [linux|windows|windows-local|launcher|launcher-windows|all]" >&2; exit 1 ;;
 esac
 
 echo "==> Done"

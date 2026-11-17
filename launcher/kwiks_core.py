@@ -179,14 +179,14 @@ def extract_assets(source: Path, log: Log = _noop) -> ExtractResult:
         )
 
     if data is not None:
-        log(f"Reading {data.name} …")
+        log(f"Reading {data.name} ...")
         res.data_files = extract_container(data.read_bytes(), assets_dir() / "data")
-        log(f"  → {res.data_files} pictures and sprites")
+        log(f"  -> {res.data_files} pictures and sprites")
 
     if audio is not None:
-        log(f"Reading {audio.name} …")
+        log(f"Reading {audio.name} ...")
         res.audio_files = extract_container(audio.read_bytes(), assets_dir() / "audio")
-        log(f"  → {res.audio_files} music and sound files")
+        log(f"  -> {res.audio_files} music and sound files")
 
     if res.data_files == 0 or res.audio_files == 0:
         res.warnings.append(
@@ -358,7 +358,7 @@ def create_link_shims(log: Log = _noop) -> int:
                 log(f"  copied {shim}")
             else:
                 dest.symlink_to(target)
-                log(f"  linked {shim} → {target}")
+                log(f"  linked {shim} -> {target}")
             made += 1
         except OSError as e:
             log(f"  could not prepare {shim}: {e}")
