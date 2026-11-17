@@ -186,7 +186,8 @@ Package:
 ```bash
 ./package.sh linux           # dist/kwiks-<version>-linux-x86_64.tar.gz
 ./package.sh windows-local   # dist/kwiks-<version>-windows-x86_64.zip
-./package.sh launcher        # dist/kwiks-launcher-<os>-x86_64.tar.gz
+./package.sh launcher         # dist/kwiks-launcher-<os>-x86_64.tar.gz
+./package.sh launcher-windows # same, built with Wine + a Windows Python
 ```
 
 Releases are built automatically by GitHub Actions
