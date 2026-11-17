@@ -42,3 +42,7 @@ launcher/*.spec
 
 # Windows cross-compile libraries (downloaded by tools/prepare_winlibs.sh)
 .winlibs/
+
+# Windows launcher build (Wine + Windows Python)
+.winpython/
+.wineprefix/

@@ -15,28 +15,24 @@ and **multiple resolutions**, without changing the original gameplay.
 
 ### I just want to play
 
-**Windows**
+Download the **launcher** for your platform from the
+[releases](../../releases) page, unpack it and run it:
 
-1. Download **`kwiks-<version>-windows-x86_64.zip`** from the
-   [releases](../../releases) page.
-2. Unpack it anywhere.
-3. Run **`kwiks.exe`**. The libraries it needs are already included.
+| Platform | Download | Run |
+|---|---|---|
+| Windows | `kwiks-launcher-windows-x86_64.tar.gz` | `kwiks-launcher.exe` |
+| Linux | `kwiks-launcher-linux-x86_64.tar.gz` | `./kwiks-launcher` |
 
-You still need the original game files — see [Original game files](#original-game-files).
-
-**Linux**
-
-1. Download **`kwiks-<version>-linux-x86_64.tar.gz`** from the releases page.
-2. Unpack it and run `./kwiks`.
-
-Or use the [launcher](#the-launcher), which does everything for you.
+The launcher installs the original game files, builds the port and starts it.
+You only need to point it at the game ZIP you downloaded.
 
 ### Original game files
 
 This project **does not include** the game's graphics, music or sound: they
 belong to their authors. Bring your own copy of **Kwiks (1998)** — freeware by
-DIGITAL Nightmares — and let the launcher install them, or extract them
-yourself:
+DIGITAL Nightmares. The launcher installs its files for you.
+
+To do it by hand instead:
 
 ```bash
 python3 tools/extract_one.py /path/to/data.one  assets/data
@@ -48,13 +44,13 @@ The `.one` container and the `.PIX` image format are documented in
 
 ### The launcher
 
-The launcher does the whole setup for you: choose the original game, and it
-installs its files, builds the port and starts it.
+It does the whole setup for you: choose the original game, and it installs its
+files, builds the port and starts it.
 
 | | |
 |---|---|
-| Windows | run `kwiks-launcher.exe` from `kwiks-launcher-windows-x86_64.tar.gz` |
-| Linux | run `./kwiks-launcher` from `kwiks-launcher-linux-x86_64.tar.gz` |
+| Windows | `kwiks-launcher.exe` |
+| Linux | `./kwiks-launcher` |
 | From source | `python3 launcher/kwiks_launcher.py` |
 
 If something goes wrong, run `kwiks-launcher --diagnose` and include the output
