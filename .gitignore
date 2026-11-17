@@ -46,3 +46,8 @@ launcher/*.spec
 # Windows launcher build (Wine + Windows Python)
 .winpython/
 .wineprefix/
+
+# Windows launcher build output
+launcher/kwiks-launcher.exe
+launcher/dist/
+launcher/build/
