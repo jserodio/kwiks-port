@@ -21,6 +21,7 @@
 //! language=en
 //! music_on=true
 //! sfx_on=true
+//! fast_graphics=false
 //! ```
 //!
 //! Semantics notes:
@@ -54,6 +55,8 @@ pub struct Config {
     pub music_on: bool,
     /// Sound effects enabled (default true).
     pub sfx_on: bool,
+    /// Fast graphics (F2): smaller monster halos.
+    pub fast_graphics: bool,
 }
 
 impl Config {
@@ -71,6 +74,7 @@ impl Config {
             language: "en".to_string(),
             music_on: true,
             sfx_on: true,
+            fast_graphics: false,
         }
     }
 
@@ -161,6 +165,11 @@ impl Config {
                         cfg.sfx_on = v;
                     }
                 }
+                "fast_graphics" => {
+                    if let Some(v) = parse_bool(value) {
+                        cfg.fast_graphics = v;
+                    }
+                }
                 _ => {} // unknown key: ignored
             }
         }
@@ -181,7 +190,8 @@ impl Config {
              fps_cap={}\n\
              language={}\n\
              music_on={}\n\
-             sfx_on={}\n",
+             sfx_on={}\n\
+             fast_graphics={}\n",
             self.window_width,
             self.window_height,
             self.fullscreen,
@@ -191,6 +201,7 @@ impl Config {
             self.language,
             self.music_on,
             self.sfx_on,
+            self.fast_graphics,
         )
     }
 }

@@ -34,6 +34,8 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use crate::assets::{self, RgbaImage};
+use crate::config::Config;
+use crate::extras::{Achievements, HighScores, ALL_ACHIEVEMENTS};
 
 // ---------------------------------------------------------------------------
 // Module contract (used by `main.rs`).
@@ -68,6 +70,10 @@ pub enum Screen {
     Pause,
     /// `LAB_00402334` — GAMEOVER.PIX
     GameOver,
+    /// Options screen (port-only): video, audio and language settings.
+    Options,
+    /// High scores and achievements (port-only).
+    Scores,
 }
 
 /// Normalized keyboard input (the original uses `GetAsyncKeyState`).
@@ -75,6 +81,8 @@ pub enum Screen {
 pub enum Input {
     Up,
     Down,
+    Left,
+    Right,
     Confirm,
     Cancel,
     Pause,
@@ -82,6 +90,8 @@ pub enum Input {
     Sfx,
     FastGraphics,
     Help,
+    Options,
+    Scores,
     Quit,
 }
 
@@ -178,6 +188,9 @@ enum Action {
 /// Conquest threshold to complete a level: `pct >= 0x4b` (75 %) in §2. **[O]**
 const LEVEL_COMPLETE_PCT: u32 = 75;
 
+/// Number of rows on the options screen.
+const OPTION_ROWS: usize = 8;
+
 /// Top HUD strip: 640×22 object (`DAT_00460848`, §3.2). **[O]**
 const HUD_HEIGHT: u32 = 22;
 
@@ -225,6 +238,20 @@ pub struct Shell {
     /// with [`TickResult::Quit`]; `main.rs` does not consume it yet (see
     /// [`TickResult::Quit`]).
     pub quit_requested: bool,
+
+    /// Persisted settings, edited by the options screen. `main.rs` owns the
+    /// file and applies the video changes when they differ from what is live.
+    pub options: Config,
+    /// Selected row on the options screen.
+    options_index: usize,
+    /// Screen to return to when leaving the options.
+    options_return: Screen,
+    /// Persisted high-score table (shown in [`Screen::Scores`]).
+    pub scores: HighScores,
+    /// Persisted achievements (shown in [`Screen::Scores`]).
+    pub achievements: Achievements,
+    /// Screen to return to when leaving the scores screen.
+    scores_return: Screen,
 
     // Game state (§3.2). For now this shell keeps it as a placeholder; once
     // `sim.rs` exists it will feed it.
@@ -278,6 +305,12 @@ impl Shell {
             click_pending: false,
             game_over_flag: false,
             level_complete_skip: false,
+            options: Config::default(),
+            options_index: 0,
+            options_return: Screen::Menu1,
+            scores: HighScores::from_str(""),
+            achievements: Achievements::from_str(""),
+            scores_return: Screen::Menu1,
             art: Art::default(),
         }
     }
@@ -449,20 +482,112 @@ impl Shell {
     /// Global keys (F1/F2/F8/F9, §1.3) + per-screen dispatch (§1.2).
     fn handle_input(&mut self, input: Input) -> Result<Action> {
         match input {
-            Input::Music => self.music_on = !self.music_on,
-            Input::Sfx => self.sfx_on = !self.sfx_on,
-            Input::FastGraphics => self.fast_graphics = !self.fast_graphics,
+            Input::Music => {
+                self.music_on = !self.music_on;
+                self.options.music_on = self.music_on;
+            }
+            Input::Sfx => {
+                self.sfx_on = !self.sfx_on;
+                self.options.sfx_on = self.sfx_on;
+            }
+            Input::FastGraphics => {
+                self.fast_graphics = !self.fast_graphics;
+                self.options.fast_graphics = self.fast_graphics;
+            }
             Input::Help => {
                 // On the title F1 shows the "about" (Knuddel's Quest, §1.2);
                 // everywhere else, the global help ("Kwiks - Hilfe").
                 self.help_is_about = self.screen == Screen::Title;
                 self.help_visible = !self.help_visible;
             }
+            // Port-only: open the options from the title or any menu.
+            Input::Options
+                if matches!(
+                    self.screen,
+                    Screen::Title | Screen::Menu1 | Screen::Menu2 | Screen::Menu3
+                ) =>
+            {
+                self.options_return = self.screen;
+                self.options_index = 0;
+                return Ok(Action::Go(Screen::Options));
+            }
+            // Port-only: high scores and achievements.
+            Input::Scores
+                if matches!(
+                    self.screen,
+                    Screen::Title | Screen::Menu1 | Screen::Menu2 | Screen::Menu3
+                ) =>
+            {
+                self.scores_return = self.screen;
+                return Ok(Action::Go(Screen::Scores));
+            }
             // Same as Esc in MENU2: `DAT_00429038 = 0` → end of the program.
             Input::Quit => return Ok(Action::Quit),
             other => return self.handle_screen_key(other),
         }
         Ok(Action::None)
+    }
+
+    /// Change the selected option. `forward` is false for Left, true for
+    /// Right/Enter. Toggles go both ways; the frame limit cycles.
+    fn change_option(&mut self, forward: bool) {
+        match self.options_index {
+            0 => self.options.widescreen = !self.options.widescreen,
+            1 => self.options.integer_scale = !self.options.integer_scale,
+            2 => {
+                const LIMITS: [u32; 4] = [30, 60, 120, 0];
+                let current = LIMITS
+                    .iter()
+                    .position(|&v| v == self.options.fps_cap)
+                    .unwrap_or(3);
+                let next = if forward {
+                    (current + 1) % LIMITS.len()
+                } else {
+                    (current + LIMITS.len() - 1) % LIMITS.len()
+                };
+                self.options.fps_cap = LIMITS[next];
+            }
+            3 => self.options.fullscreen = !self.options.fullscreen,
+            4 => {
+                self.options.language = if self.options.language == "es" {
+                    "en".to_string()
+                } else {
+                    "es".to_string()
+                };
+            }
+            5 => self.options.music_on = !self.options.music_on,
+            6 => self.options.sfx_on = !self.options.sfx_on,
+            7 => self.options.fast_graphics = !self.options.fast_graphics,
+            _ => {}
+        }
+        // Mirror the settings that live in the shell.
+        self.music_on = self.options.music_on;
+        self.sfx_on = self.options.sfx_on;
+        self.fast_graphics = self.options.fast_graphics;
+        self.language = match self.options.language.as_str() {
+            "es" => Language::Es,
+            _ => Language::En,
+        };
+    }
+
+    /// Text of each options row, given the current settings.
+    fn option_rows(&self) -> [(&'static str, String); OPTION_ROWS] {
+        let onoff = |b: bool| if b { "ON" } else { "OFF" };
+        let fps = match self.options.fps_cap {
+            0 => "OFF".to_string(),
+            n => format!("{n} FPS"),
+        };
+        let lang = if self.options.language == "es" { "ES" } else { "EN" };
+        [
+            ("Widescreen", onoff(self.options.widescreen).to_string()),
+            ("Integer scale", onoff(self.options.integer_scale).to_string()),
+            ("Frame limit", fps),
+            ("Fullscreen", onoff(self.options.fullscreen).to_string()),
+            ("Language", lang.to_string()),
+            ("Music", onoff(self.options.music_on).to_string()),
+            ("Sound effects", onoff(self.options.sfx_on).to_string()),
+            ("Fast graphics", onoff(self.options.fast_graphics).to_string()),
+        ]
     }
 
     fn handle_screen_key(&mut self, input: Input) -> Result<Action> {
@@ -555,6 +680,40 @@ impl Shell {
             // only polls Esc/Enter/Space).
             Screen::Attract => match input {
                 Confirm | Cancel => self.attract_advance()?,
+                _ => Action::None,
+            },
+            // Port-only options screen: navigate with Up/Down, change with
+            // Left/Right (or Enter), leave with Esc.
+            Screen::Options => match input {
+                Up => {
+                    if self.options_index > 0 {
+                        self.options_index -= 1;
+                    }
+                    Action::None
+                }
+                Down => {
+                    if self.options_index + 1 < OPTION_ROWS {
+                        self.options_index += 1;
+                    }
+                    Action::None
+                }
+                Left => {
+                    self.change_option(false);
+                    Action::None
+                }
+                Right | Confirm => {
+                    self.change_option(true);
+                    Action::None
+                }
+                Cancel => {
+                    self.click();
+                    Action::Go(self.options_return)
+                }
+                _ => Action::None,
+            },
+            // Port-only high scores and achievements screen.
+            Screen::Scores => match input {
+                Cancel | Confirm | Scores => Action::Go(self.scores_return),
                 _ => Action::None,
             },
             Screen::Game => match self.game_mode {
@@ -719,6 +878,10 @@ impl Shell {
             Screen::Game => self.art.feld(self.level % 14 + 1)?.clone(),
             Screen::Pause => self.art.jpg("paused")?.clone(),
             Screen::GameOver => self.art.pix("gameover")?.clone(),
+            // Options: plain black backdrop, the panel draws on top.
+            Screen::Options => RgbaImage::new(640, 480),
+            // High scores: plain black backdrop.
+            Screen::Scores => RgbaImage::new(640, 480),
         };
         self.background = Some(bg);
         Ok(())
@@ -773,6 +936,8 @@ impl Shell {
                     blit(out, bg);
                 }
             }
+            Screen::Options => self.draw_options(out),
+            Screen::Scores => self.draw_scores(out),
         }
 
         if self.help_visible {
@@ -813,6 +978,100 @@ impl Shell {
         draw_text_outline(out, 191, 12, 1, yellow, &num(self.level + 1, FMT_LEVEL));
         draw_text_outline(out, 302, 12, 1, yellow, &num(self.score, FMT_SCORE));
         draw_text_outline(out, 465, 12, 1, yellow, &num(self.lives, FMT_LIVES));
+    }
+
+    /// Options screen: a panel with the settings, the selected row highlighted.
+    fn draw_options(&self, out: &mut RgbaImage) {
+        let white = [255, 255, 255, 255];
+        let yellow = [252, 228, 48, 255];
+        let grey = [170, 170, 170, 255];
+
+        let w = 500u32;
+        let h = 350u32;
+        let x = (out.width.saturating_sub(w)) / 2;
+        let y = (out.height.saturating_sub(h)) / 2;
+
+        fill_rect_blend(out, x, y, w, h, [10, 10, 30], 235);
+        // Frame
+        fill_rect(out, x, y, w, 2, [0, 0, 255, 255]);
+        fill_rect(out, x, y + h - 2, w, 2, [0, 0, 255, 255]);
+        fill_rect(out, x, y, 2, h, [0, 0, 255, 255]);
+        fill_rect(out, x + w - 2, y, 2, h, [0, 0, 255, 255]);
+
+        draw_text(out, x + 24, y + 18, 2, white, "OPTIONS");
+
+        for (i, (label, value)) in self.option_rows().iter().enumerate() {
+            let ry = y + 66 + i as u32 * 26;
+            let selected = i == self.options_index;
+            let colour = if selected { yellow } else { white };
+            if selected {
+                draw_text(out, x + 12, ry, 1, colour, ">");
+            }
+            draw_text_outline(out, x + 30, ry, 1, colour, label);
+            let vx = x + w - 30 - (value.chars().count() as u32) * 8;
+            draw_text_outline(out, vx, ry, 1, colour, value);
+        }
+
+        draw_text(
+            out,
+            x + 24,
+            y + h - 30,
+            1,
+            grey,
+            "UP/DOWN SELECT   LEFT/RIGHT CHANGE   ESC BACK",
+        );
+    }
+
+    /// High scores (left) and achievements (right).
+    fn draw_scores(&self, out: &mut RgbaImage) {
+        let white = [255, 255, 255, 255];
+        let yellow = [252, 228, 48, 255];
+        let grey = [150, 150, 150, 255];
+
+        fill_rect(out, 0, 0, out.width, out.height, [0, 0, 0, 255]);
+        draw_text(out, 24, 16, 2, white, "HIGH SCORES");
+        draw_text(out, 340, 16, 2, white, "ACHIEVEMENTS");
+
+        // --- High scores (left column) ---
+        let mut y = 60;
+        if self.scores.entries.is_empty() {
+            draw_text(out, 24, y, 1, grey, "NO SCORES YET");
+            y += 16;
+        }
+        for (i, e) in self.scores.entries.iter().enumerate() {
+            let line = format!(
+                "{:>2}. {:<3} {:>7}  LV {:>2}  {:>3}%",
+                i + 1,
+                e.name,
+                e.score,
+                e.level + 1,
+                e.percent
+            );
+            draw_text(out, 24, y, 1, if i == 0 { yellow } else { white }, &line);
+            y += 16;
+        }
+
+        // --- Achievements (right column) ---
+        let (done, total) = self.achievements.progress();
+        draw_text(
+            out,
+            340,
+            48,
+            1,
+            yellow,
+            &format!("{done}/{total} UNLOCKED"),
+        );
+        let mut y = 70;
+        for (id, desc) in ALL_ACHIEVEMENTS.iter() {
+            let unlocked = self.achievements.is_unlocked(id);
+            let mark = if unlocked { "[X]" } else { "[ ]" };
+            let colour = if unlocked { white } else { grey };
+            let text: String = format!("{mark} {desc}").chars().take(34).collect();
+            draw_text(out, 340, y, 1, colour, &text);
+            y += 14;
+        }
+
+        draw_text(out, 24, out.height - 24, 1, grey, "ESC BACK");
     }
 }
 
@@ -1263,6 +1522,7 @@ fn draw_help(
                     "ESC: CANCELAR / ATRACTIVO".to_string(),
                     "P: PAUSA".to_string(),
                     "F1: AYUDA".to_string(),
+                    "O: OPCIONES   H: RECORDS".to_string(),
                     "F2: GRAFICOS RAPIDOS".to_string(),
                     format!("F8: MUSICA {}", onoff_es(music_on)),
                     format!("F9: SONIDO {}", onoff_es(sfx_on)),
@@ -1277,6 +1537,7 @@ fn draw_help(
                     "ESC: CANCEL / ATTRACT".to_string(),
                     "P: PAUSE".to_string(),
                     "F1: HELP".to_string(),
+                    "O: OPTIONS   H: SCORES".to_string(),
                     "F2: FAST GRAPHICS".to_string(),
                     format!("F8: MUSIC {}", onoff(music_on)),
                     format!("F9: SOUND {}", onoff(sfx_on)),
@@ -1323,6 +1584,82 @@ mod tests {
     fn tick(shell: &mut Shell, input: Option<Input>) -> TickResult {
         let mut out = buf();
         shell.tick(input, &mut out).unwrap()
+    }
+
+    #[test]
+    fn scores_screen_opens_and_goes_back() {
+        let mut s = Shell::new();
+        s.reset_session();
+        s.enter(Screen::Menu1).unwrap();
+        assert!(go(tick(&mut s, Some(Input::Scores)), Screen::Scores));
+        assert!(go(tick(&mut s, Some(Input::Cancel)), Screen::Menu1));
+    }
+
+    #[test]
+    fn scores_do_not_open_during_a_game() {
+        let mut s = Shell::new();
+        s.reset_session();
+        s.enter(Screen::Game).unwrap();
+        assert!(matches!(
+            tick(&mut s, Some(Input::Scores)),
+            TickResult::Stay
+        ));
+        assert_eq!(s.screen, Screen::Game);
+    }
+
+    #[test]
+    fn options_open_from_a_menu_and_return() {
+        let mut s = Shell::new();
+        s.reset_session();
+        s.enter(Screen::Menu1).unwrap();
+        assert!(go(tick(&mut s, Some(Input::Options)), Screen::Options));
+        assert!(go(tick(&mut s, Some(Input::Cancel)), Screen::Menu1));
+    }
+
+    #[test]
+    fn options_toggle_widescreen_and_frame_limit() {
+        let mut s = Shell::new();
+        s.reset_session();
+        s.enter(Screen::Menu1).unwrap();
+        let _ = tick(&mut s, Some(Input::Options));
+
+        let before = s.options.widescreen;
+        let _ = tick(&mut s, Some(Input::Right));
+        assert_ne!(s.options.widescreen, before, "Right changes the first row");
+
+        // Down to the frame limit row and cycle it.
+        let _ = tick(&mut s, Some(Input::Down));
+        let _ = tick(&mut s, Some(Input::Down));
+        let before = s.options.fps_cap;
+        let _ = tick(&mut s, Some(Input::Right));
+        assert_ne!(s.options.fps_cap, before, "the frame limit cycles");
+    }
+
+    #[test]
+    fn options_language_toggle_updates_the_shell() {
+        let mut s = Shell::new();
+        s.reset_session();
+        s.enter(Screen::Menu1).unwrap();
+        let _ = tick(&mut s, Some(Input::Options));
+        // Language is row 4.
+        for _ in 0..4 {
+            let _ = tick(&mut s, Some(Input::Down));
+        }
+        let before = s.language;
+        let _ = tick(&mut s, Some(Input::Right));
+        assert_ne!(s.language, before, "the language toggle reaches the shell");
+    }
+
+    #[test]
+    fn options_do_not_open_during_a_game() {
+        let mut s = Shell::new();
+        s.reset_session();
+        s.enter(Screen::Game).unwrap();
+        assert!(matches!(
+            tick(&mut s, Some(Input::Options)),
+            TickResult::Stay
+        ));
+        assert_eq!(s.screen, Screen::Game);
     }
 
     fn go(result: TickResult, screen: Screen) -> bool {
@@ -1684,6 +2021,24 @@ mod tests {
                 .unwrap();
             println!("  {path:?}");
         };
+
+        // Options screen (port-only).
+        let mut opts = Shell::new();
+        opts.enter(Screen::Options).unwrap();
+        dump(&mut opts, "00_options", None);
+
+        // High scores and achievements (port-only), with a little sample data.
+        let mut scores = Shell::new();
+        scores.scores = crate::extras::HighScores::from_str(
+            "KWIKS-HIGHSCORES-1\n\
+             name=KWK score=2326 level=2 percent=78\n\
+             name=YLE score=1200 level=1 percent=75\n\
+             name=ACE score=900 level=0 percent=76\n",
+        );
+        let _ = scores.achievements.unlock("first_zone");
+        let _ = scores.achievements.unlock("first_level");
+        scores.enter(Screen::Scores).unwrap();
+        dump(&mut scores, "00_scores", None);
 
         // Attract: full carousel (one-way only: it ends up closing the program).
         let mut s = Shell::new();

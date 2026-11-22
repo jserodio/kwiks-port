@@ -1,14 +1,16 @@
-//! Internal resolution and window scaling (letterbox).
+//! Internal resolution and window scaling.
 //!
 //! The original game is 640×480×16 fullscreen. The port keeps 640×480 as the
-//! default internal resolution and scales the framebuffer to the window
-//! preserving the aspect ratio (letterbox), just as `main.rs` does with
-//! `set_logical_size`. This module concentrates the pure geometry (no SDL) so
-//! it can be unit tested:
+//! default internal resolution and lets SDL scale the framebuffer to the
+//! window, preserving the aspect ratio. This module concentrates the pure
+//! geometry (no SDL) so it can be unit tested:
 //!
 //! - [`internal_size`]: internal field resolution for a given window.
-//! - [`letterbox`]: centered destination rectangle that preserves the aspect ratio.
-//! - [`integer_scale`]: maximum integer scale that fits in the window.
+//! - [`image_origin`]: where the original 640×480 picture sits inside it.
+//!
+//! The window presentation itself (letterbox or whole-pixel integer scaling)
+//! is delegated to SDL (`SDL_SetRenderLogicalPresentation`); the player picks
+//! it with the `integer_scale` option.
 //!
 //! # Extended widescreen field — design decision **[D]**
 //!
@@ -100,52 +102,6 @@ pub fn image_origin(size: InternalSize) -> (u32, u32) {
     ((size.width.saturating_sub(BASE_WIDTH)) / 2, 0)
 }
 
-/// Maximum integer scale possible inside `dst` (0 if the content does not fit
-/// even at 1:1 scale).
-pub fn integer_scale(src: (u32, u32), dst: (u32, u32)) -> u32 {
-    let (sw, sh) = (src.0.max(1), src.1.max(1));
-    (dst.0 / sw).min(dst.1 / sh)
-}
-
-/// Destination rectangle to scale the internal content to the window,
-/// preserving the aspect ratio (letterbox). Returns (x, y, w, h).
-///
-/// - `integer_scale = true`: uses the largest integer scale that fits (see
-///   [`integer_scale`]) and centers the result. If the window is smaller than
-///   the content no integer ≥ 1 fits and it falls back to fractional fit
-///   (**[D]**: filling the window is better than leaving a 0-sized rectangle).
-/// - `integer_scale = false`: fractional fit to the largest possible size
-///   without distortion (the limiting dimension is filled completely).
-///
-/// Centering uses integer division: if an odd pixel is left over it stays on
-/// the right/bottom (bias of at most 1 px toward the top-left). A zero-sized
-/// window returns (0, 0, 0, 0).
-pub fn letterbox(
-    src: (u32, u32),
-    dst: (u32, u32),
-    integer_scale: bool,
-) -> (i32, i32, u32, u32) {
-    let (sw, sh) = (src.0.max(1) as u64, src.1.max(1) as u64);
-    let (dw, dh) = (dst.0 as u64, dst.1 as u64);
-    if dw == 0 || dh == 0 {
-        return (0, 0, 0, 0);
-    }
-
-    // Integer scale if it fits (and at least 1:1); otherwise fractional fit.
-    let k = self::integer_scale(src, dst) as u64;
-    let (w, h) = if integer_scale && k >= 1 {
-        (k * sw, k * sh)
-    } else if dw * sh <= dh * sw {
-        // Width-limited: fill `dw` and round the height.
-        (dw, ((dw * sh + sw / 2) / sw).max(1))
-    } else {
-        // Height-limited: fill `dh` and round the width.
-        (((dh * sw + sh / 2) / sh).max(1), dh)
-    };
-
-    let w = w.min(dw);
-    let h = h.min(dh);
-    let x = ((dw - w) / 2) as i32;
-    let y = ((dh - h) / 2) as i32;
-    (x, y, w as u32, h as u32)
-}
+// Note: the actual window presentation (letterbox or whole-pixel integer
+// scaling) is delegated to SDL with `SDL_SetRenderLogicalPresentation`; the
+// player picks the mode with the `integer_scale` option.

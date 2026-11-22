@@ -14,7 +14,7 @@ mod video;
 
 use config::{config_path, Config};
 use video::{
-    image_origin, integer_scale, internal_size, letterbox, InternalSize, BASE_HEIGHT, BASE_WIDTH,
+    image_origin, internal_size, InternalSize, BASE_HEIGHT, BASE_WIDTH,
 };
 use std::path::PathBuf;
 
@@ -44,6 +44,7 @@ fn custom_config() -> Config {
         language: "en".to_string(),
         music_on: false,
         sfx_on: false,
+        fast_graphics: true,
     }
 }
 
@@ -347,117 +348,4 @@ fn internal_size_even_width_and_symmetric_margins() {
             "asymmetric margins for {window:?}"
         );
     }
-}
-
-// ---------------------------------------------------------------------------
-// Video: integer scaling
-// ---------------------------------------------------------------------------
-
-#[test]
-fn integer_scale_values() {
-    assert_eq!(integer_scale((640, 480), (1280, 960)), 2);
-    assert_eq!(integer_scale((640, 480), (1920, 1080)), 2); // height-limited
-    assert_eq!(integer_scale((640, 480), (1280, 720)), 1);
-    assert_eq!(integer_scale((640, 480), (640, 480)), 1);
-    assert_eq!(integer_scale((640, 480), (639, 480)), 0); // does not fit even 1:1
-    assert_eq!(integer_scale((640, 480), (320, 240)), 0);
-}
-
-// ---------------------------------------------------------------------------
-// Video: letterbox
-// ---------------------------------------------------------------------------
-
-#[test]
-fn letterbox_exact_fit() {
-    // Exact 2× of 640×480: no bars, both modes.
-    for int in [false, true] {
-        assert_eq!(letterbox((640, 480), (1280, 960), int), (0, 0, 1280, 960));
-    }
-}
-
-#[test]
-fn letterbox_centers() {
-    // Integer scaling: 2× leaves 1280×960 centered in 1920×1080.
-    assert_eq!(letterbox((640, 480), (1920, 1080), true), (320, 60, 1280, 960));
-    // Fractional: height-limited (4:3 in 16:9) → side bars.
-    assert_eq!(letterbox((640, 480), (1920, 1080), false), (240, 0, 1440, 1080));
-    // 1:1 centered with margins.
-    assert_eq!(letterbox((640, 480), (800, 600), true), (80, 60, 640, 480));
-}
-
-#[test]
-fn letterbox_integer_uses_max_scale() {
-    // The maximum integer that fits is 2× even if space is left at the sides.
-    let (x, y, w, h) = letterbox((640, 480), (1300, 960), true);
-    assert_eq!((x, y, w, h), (10, 0, 1280, 960));
-    assert_eq!(w % BASE_WIDTH, 0);
-    assert_eq!(h % BASE_HEIGHT, 0);
-}
-
-#[test]
-fn letterbox_integer_fallback_when_window_smaller() {
-    // The window is smaller than the content: it falls back to fractional fit
-    // (documented) instead of leaving a null rectangle.
-    assert_eq!(letterbox((640, 480), (320, 240), true), (0, 0, 320, 240));
-}
-
-#[test]
-fn letterbox_zero_dst_is_empty() {
-    for int in [false, true] {
-        assert_eq!(letterbox((640, 480), (0, 0), int), (0, 0, 0, 0));
-    }
-}
-
-#[test]
-fn letterbox_widescreen_internal_fills_width() {
-    // 854×480 in a 16:9 window: the width is filled and only a sub-pixel
-    // vertical bar remains (719 of 720 after rounding).
-    let (x, y, w, h) = letterbox((854, 480), (1280, 720), false);
-    assert_eq!((x, y, w, h), (0, 0, 1280, 719));
-}
-
-#[test]
-fn letterbox_preserves_aspect_and_maximizes() {
-    let cases = [
-        ((640, 480), (1366, 768)),
-        ((640, 480), (100, 50)),
-        ((640, 480), (500, 500)),
-        ((640, 480), (641, 480)),
-        ((854, 480), (2560, 1080)),
-        ((768, 480), (1280, 800)),
-        ((1708, 480), (5120, 1440)),
-    ];
-    for (src, dst) in cases {
-        let (x, y, w, h) = letterbox(src, dst, false);
-        let (sw, sh) = (src.0 as f64, src.1 as f64);
-        let (dw, dh) = (dst.0 as f64, dst.1 as f64);
-
-        // It fits entirely in the window.
-        assert!(w as f64 <= dw && h as f64 <= dh, "{src:?} → {dst:?}: {w}×{h}");
-        // Preserves the aspect ratio (relative error < 1 % due to pixel rounding).
-        let aspect_src = sw / sh;
-        let aspect_out = w as f64 / h as f64;
-        assert!(
-            ((aspect_out - aspect_src) / aspect_src).abs() < 0.01,
-            "{src:?} → {dst:?}: aspect {aspect_out} vs {aspect_src}"
-        );
-        // Maximizes: the limiting dimension is filled completely.
-        assert!(
-            w == dst.0 || h == dst.1,
-            "{src:?} → {dst:?}: {w}×{h} does not maximize"
-        );
-        // Centered (integer division: the leftover pixel stays on the right
-        // or at the bottom).
-        assert_eq!(x, ((dst.0 - w) / 2) as i32);
-        assert_eq!(y, ((dst.1 - h) / 2) as i32);
-    }
-}
-
-#[test]
-fn letterbox_aspect_ok_in_integer_mode_too() {
-    // In integer mode the aspect is exact by construction (k × src).
-    let (x, y, w, h) = letterbox((640, 480), (1920, 1080), true);
-    assert_eq!(w * BASE_HEIGHT, h * BASE_WIDTH);
-    assert_eq!(x, ((1920 - w) / 2) as i32);
-    assert_eq!(y, ((1080 - h) / 2) as i32);
 }

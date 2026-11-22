@@ -40,13 +40,17 @@ fn map_key(key: Keycode) -> Option<Input> {
     Some(match key {
         Keycode::Up => Input::Up,
         Keycode::Down => Input::Down,
+        Keycode::Left => Input::Left,
+        Keycode::Right => Input::Right,
         Keycode::Return | Keycode::Space => Input::Confirm,
         Keycode::Escape => Input::Cancel,
         Keycode::P => Input::Pause,
+        Keycode::F2 => Input::FastGraphics,
         Keycode::F8 => Input::Music,
         Keycode::F9 => Input::Sfx,
-        Keycode::F2 => Input::FastGraphics,
         Keycode::F1 => Input::Help,
+        Keycode::O => Input::Options,
+        Keycode::H => Input::Scores,
         _ => return None,
     })
 }
@@ -116,7 +120,8 @@ fn extend_image(src: &RgbaImage, size: InternalSize) -> RgbaImage {
 /// Music for each screen, per `GAME_LOGIC.md` §1 (TITEL/SPIEL/WERBE.MOD).
 fn music_for(screen: Screen) -> Option<&'static str> {
     match screen {
-        Screen::Title | Screen::Menu1 | Screen::Menu2 | Screen::Menu3 => Some("titel.mod"),
+        Screen::Title | Screen::Menu1 | Screen::Menu2 | Screen::Menu3 | Screen::Options
+        | Screen::Scores => Some("titel.mod"),
         Screen::Game | Screen::Pause => Some("spiel.mod"),
         Screen::Attract | Screen::Credits | Screen::GameOver => Some("werbe.mod"),
     }
@@ -128,6 +133,7 @@ fn main() -> Result<()> {
     let mut cfg = Config::load(&cfg_path);
 
     let size = video::internal_size((cfg.window_width, cfg.window_height), cfg.widescreen);
+    let mut size = size;
 
     // ---- Video ----
     let sdl = sdl3::init()?;
@@ -141,12 +147,15 @@ fn main() -> Result<()> {
     let window = builder.build().context("create window")?;
 
     let mut canvas = window.into_canvas();
+    // SDL does the presentation scaling. `integer_scale` asks for whole-pixel
+    // multiples (pixel-perfect); otherwise the image is letterboxed.
+    let presentation = if cfg.integer_scale {
+        sdl3::sys::render::SDL_RendererLogicalPresentation::INTEGER_SCALE
+    } else {
+        sdl3::sys::render::SDL_RendererLogicalPresentation::LETTERBOX
+    };
     canvas
-        .set_logical_size(
-            size.width,
-            size.height,
-            sdl3::sys::render::SDL_RendererLogicalPresentation::LETTERBOX,
-        )
+        .set_logical_size(size.width, size.height, presentation)
         .context("logical resolution")?;
     let texture_creator = canvas.texture_creator();
     let mut texture = texture_creator
@@ -158,10 +167,14 @@ fn main() -> Result<()> {
     let mut shell = Shell::new();
     shell.music_on = cfg.music_on;
     shell.sfx_on = cfg.sfx_on;
+    shell.options = cfg.clone();
     shell.language = match cfg.language.as_str() {
         "es" => screens::Language::Es,
         _ => screens::Language::En,
     };
+    // Video settings currently applied to the renderer, to detect changes made
+    // from the options screen.
+    let mut applied = (cfg.widescreen, cfg.integer_scale, cfg.fullscreen);
 
     let mut sim: Option<Sim> = None;
     let mut fixed = FixedStep::new();
@@ -170,8 +183,8 @@ fn main() -> Result<()> {
     let mut audio = Audio::new().ok();
     let mut current_music: Option<String> = None;
 
-    let mut scores = HighScores::load(&extras::highscores_path());
-    let mut achievements = Achievements::load(&extras::achievements_path());
+    shell.scores = HighScores::load(&extras::highscores_path());
+    shell.achievements = Achievements::load(&extras::achievements_path());
 
     // Practice mode: KWIKS_LEVEL=0..14 starts at that level.
     let practice_level: Option<u32> = std::env::var("KWIKS_LEVEL")
@@ -217,6 +230,38 @@ fn main() -> Result<()> {
         // 1) The screen draws its background/HUD and decides the transition.
         let result = shell.tick(input, &mut framebuffer)?;
 
+        // Apply video settings changed from the options screen.
+        let want = (
+            shell.options.widescreen,
+            shell.options.integer_scale,
+            shell.options.fullscreen,
+        );
+        if want != applied {
+            if want.2 != applied.2 {
+                canvas.window_mut().set_fullscreen(want.2)?;
+            }
+            if want.0 != applied.0 || want.1 != applied.1 {
+                size = video::internal_size(
+                    (shell.options.window_width, shell.options.window_height),
+                    want.0,
+                );
+                let presentation = if want.1 {
+                    sdl3::sys::render::SDL_RendererLogicalPresentation::INTEGER_SCALE
+                } else {
+                    sdl3::sys::render::SDL_RendererLogicalPresentation::LETTERBOX
+                };
+                canvas.set_logical_size(size.width, size.height, presentation)?;
+                texture = texture_creator.create_texture_streaming(
+                    PixelFormat::RGBA32,
+                    size.width,
+                    size.height,
+                )?;
+                framebuffer = RgbaImage::new(size.width, size.height);
+                eprintln!("video: {}x{}", size.width, size.height);
+            }
+            applied = want;
+        }
+
         // The original closes the program when the attract loop runs out and
         // with Esc in MENU2 (`PostQuitMessage`, `0x405a11`/`0x4057ce`).
         if let TickResult::Quit = result {
@@ -225,9 +270,9 @@ fn main() -> Result<()> {
         }
 
         if let Some(Input::FastGraphics) = input {
-            if achievements.unlock("fast_graphics") {
+            if shell.achievements.unlock("fast_graphics") {
                 eprintln!("achievement: fast graphics");
-                let _ = achievements.save(&extras::achievements_path());
+                let _ = shell.achievements.save(&extras::achievements_path());
             }
         }
 
@@ -259,17 +304,17 @@ fn main() -> Result<()> {
             if next != Screen::Game && next != Screen::Pause {
                 if let Some(s) = sim.take() {
                     // End of game: save the high score if it makes the table.
-                    if scores.is_record(s.score) {
+                    if shell.scores.is_record(s.score) {
                         let entry = HighScore {
                             name: "KWIK".to_string(),
                             score: s.score,
                             level: s.level + 1,
                             percent: (s.field.fill_ratio() * 100.0) as u32,
                         };
-                        if let Some(pos) = scores.insert(entry) {
+                        if let Some(pos) = shell.scores.insert(entry) {
                             eprintln!("new record! position {}", pos + 1);
                         }
-                        let _ = scores.save(&extras::highscores_path());
+                        let _ = shell.scores.save(&extras::highscores_path());
                     }
                 }
             }
@@ -323,8 +368,8 @@ fn main() -> Result<()> {
                             }
                             sim::Event::Filled { pixels } => {
                                 eprintln!("zone conquered: {pixels} px");
-                                if achievements.unlock("first_zone") {
-                                    let _ = achievements.save(&extras::achievements_path());
+                                if shell.achievements.unlock("first_zone") {
+                                    let _ = shell.achievements.save(&extras::achievements_path());
                                 }
                                 if let Some(a) = audio.as_mut() {
                                     let _ = a.play_sfx("gefuellt.wav");
@@ -332,8 +377,8 @@ fn main() -> Result<()> {
                             }
                             sim::Event::LevelComplete => level_done = true,
                             sim::Event::ExtraLife => {
-                                if achievements.unlock("extra_life") {
-                                    let _ = achievements.save(&extras::achievements_path());
+                                if shell.achievements.unlock("extra_life") {
+                                    let _ = shell.achievements.save(&extras::achievements_path());
                                 }
                                 if let Some(a) = audio.as_mut() {
                                     let _ = a.play_sfx("leben.wav");
@@ -345,11 +390,11 @@ fn main() -> Result<()> {
                 }
 
                 // Time- and score-based achievements.
-                if alive_since.elapsed().as_secs() >= 60 && achievements.unlock("survive_60s") {
-                    let _ = achievements.save(&extras::achievements_path());
+                if alive_since.elapsed().as_secs() >= 60 && shell.achievements.unlock("survive_60s") {
+                    let _ = shell.achievements.save(&extras::achievements_path());
                 }
-                if s.score >= 100_000 && achievements.unlock("score_100k") {
-                    let _ = achievements.save(&extras::achievements_path());
+                if s.score >= 100_000 && shell.achievements.unlock("score_100k") {
+                    let _ = shell.achievements.save(&extras::achievements_path());
                 }
 
                 if game_over {
@@ -358,19 +403,19 @@ fn main() -> Result<()> {
                     // The COMPLET interstitial is handled by `screens` (mode 1):
                     // it waits for a keypress and then advances `shell.level`.
                     // Here only the achievements are recorded.
-                    if achievements.unlock("first_level") {
-                        let _ = achievements.save(&extras::achievements_path());
+                    if shell.achievements.unlock("first_level") {
+                        let _ = shell.achievements.save(&extras::achievements_path());
                     }
-                    if deaths_this_level == 0 && achievements.unlock("no_death_level") {
-                        let _ = achievements.save(&extras::achievements_path());
+                    if deaths_this_level == 0 && shell.achievements.unlock("no_death_level") {
+                        let _ = shell.achievements.save(&extras::achievements_path());
                     }
                     if s.level + 1 >= extras::LEVEL_COUNT {
-                        if achievements.unlock("all_levels") {
-                            let _ = achievements.save(&extras::achievements_path());
+                        if shell.achievements.unlock("all_levels") {
+                            let _ = shell.achievements.save(&extras::achievements_path());
                         }
                         eprintln!("game completed!");
-                    } else if s.level + 1 >= 5 && achievements.unlock("five_levels") {
-                        let _ = achievements.save(&extras::achievements_path());
+                    } else if s.level + 1 >= 5 && shell.achievements.unlock("five_levels") {
+                        let _ = shell.achievements.save(&extras::achievements_path());
                     }
                 }
 
@@ -379,8 +424,8 @@ fn main() -> Result<()> {
                 shell.score = s.score;
                 shell.lives = s.lives.max(0) as u32;
                 shell.percent = (s.field.fill_ratio() * 100.0) as u32;
-                if shell.percent >= 90 && achievements.unlock("fill_90") {
-                    let _ = achievements.save(&extras::achievements_path());
+                if shell.percent >= 90 && shell.achievements.unlock("fill_90") {
+                    let _ = shell.achievements.save(&extras::achievements_path());
                 }
 
                 // The field is drawn full-screen (including the blue frame).
@@ -423,8 +468,8 @@ fn main() -> Result<()> {
         canvas.present();
 
         // Optional FPS cap (0 = uncapped).
-        if cfg.fps_cap > 0 {
-            let target = 1.0 / cfg.fps_cap as f64;
+        if shell.options.fps_cap > 0 {
+            let target = 1.0 / shell.options.fps_cap as f64;
             let spent = last.elapsed().as_secs_f64();
             if spent < target {
                 std::thread::sleep(std::time::Duration::from_secs_f64(target - spent));
@@ -438,6 +483,8 @@ fn main() -> Result<()> {
     }
 
     // Save configuration and extras on exit.
+    // The options screen owns the settings; keep the shell in sync.
+    cfg = shell.options.clone();
     cfg.music_on = shell.music_on;
     cfg.sfx_on = shell.sfx_on;
     cfg.language = match shell.language {
@@ -445,8 +492,8 @@ fn main() -> Result<()> {
         screens::Language::En => "en".to_string(),
     };
     let _ = cfg.save(&cfg_path);
-    let _ = scores.save(&extras::highscores_path());
-    let _ = achievements.save(&extras::achievements_path());
+    let _ = shell.scores.save(&extras::highscores_path());
+    let _ = shell.achievements.save(&extras::achievements_path());
 
     let elapsed = started.elapsed().as_secs_f64();
     let fps = frames as f64 / elapsed;

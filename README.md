@@ -130,6 +130,8 @@ Same as the original:
 | F2 | Fast graphics |
 | F8 | Music on/off |
 | F9 | Sound effects on/off |
+| O | Options (port-only): widescreen, integer scale, frame limit, fullscreen, language, audio |
+| H | High scores and achievements (port-only) |
 
 ---
 
