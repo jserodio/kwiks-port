@@ -69,6 +69,10 @@ pub struct Field {
     image: RgbaImage,
     /// Conquered pixels (equivalent to `DAT_00429028`).
     filled: u32,
+    /// Reusable `visited` marks for the flood fill, tagged with `visit_gen`
+    /// so they do not need clearing between fills.
+    visited: Vec<u32>,
+    visit_gen: u32,
 }
 
 /// Result of a close/fill attempt.
@@ -90,6 +94,8 @@ impl Field {
             mirror: vec![Cell::Empty as u8; n],
             image,
             filled: 0,
+            visited: vec![0; n],
+            visit_gen: 0,
         }
     }
 
@@ -257,7 +263,16 @@ impl Field {
         self.snapshot();
 
         let mut stack: Vec<(i32, i32)> = vec![(seed_x, seed_y)];
-        let mut visited = vec![false; self.state.len()];
+        // Reuse the scratch marks: bump the generation instead of clearing.
+        if self.visited.len() != self.state.len() {
+            self.visited.resize(self.state.len(), 0);
+        }
+        self.visit_gen = self.visit_gen.wrapping_add(1);
+        if self.visit_gen == 0 {
+            self.visited.fill(0);
+            self.visit_gen = 1;
+        }
+        let gen = self.visit_gen;
         let mut touched_monster = false;
         let mut filled_now = 0u32;
 
@@ -274,10 +289,10 @@ impl Field {
 
             for sx in left..=right {
                 let i = self.index(sx, y).expect("span inside the field");
-                if visited[i] {
+                if self.visited[i] == gen {
                     continue;
                 }
-                visited[i] = true;
+                self.visited[i] = gen;
 
                 // The span borders mark whether the area encloses a monster.
                 if self.cell(sx, y - 1) == Cell::Monster
@@ -288,9 +303,6 @@ impl Field {
                     touched_monster = true;
                 }
 
-                // Reveal the image pixel.
-                let rgba = self.image.pixel(sx as u32, y as u32);
-                self.image.put_pixel(sx as u32, y as u32, rgba);
                 self.state[i] = Cell::Closed as u8;
                 filled_now += 1;
 
@@ -426,18 +438,33 @@ impl Field {
     /// **black `0x0000`**, frame = **blue `0x001f`**, own line = white `0xffff`,
     /// monster marker = `0x7f00` (green in RGB565).
     pub fn draw_playfield(&self, out: &mut RgbaImage, y0: u32) {
-        for y in 0..self.height {
-            if (y as u32) < y0 {
-                continue;
-            }
+        // Hot path: one pass over the field writing RGBA straight into the
+        // framebuffer. Index arithmetic is hoisted per row and the image is
+        // sampled without bounds checks when its size matches the field.
+        let direct_image =
+            self.image.width as i32 == self.width && self.image.height as i32 == self.height;
+        let out_stride = out.width as usize * 4;
+
+        for y in (y0 as i32)..self.height {
+            let state_row = (y * self.width) as usize;
+            let out_row = y as usize * out_stride;
+            let frame_row = y < 2 || y >= self.height - 2;
+
             for x in 0..self.width {
-                let i = self.index(x, y).expect("inside the field");
+                let i = state_row + x as usize;
                 let rgba = match self.state[i] {
                     v if v == Cell::Line as u8 => [0xff, 0xff, 0xff, 0xff],
                     v if v == Cell::Closed as u8 => {
-                        // The frame is blue; the rest reveals the image.
-                        if self.is_frame(x, y) {
+                        if frame_row || x < 2 || x >= self.width - 2 {
                             FRAME_COLOR
+                        } else if direct_image {
+                            let o = i * 4;
+                            [
+                                self.image.data[o],
+                                self.image.data[o + 1],
+                                self.image.data[o + 2],
+                                self.image.data[o + 3],
+                            ]
                         } else {
                             self.image.pixel(x as u32, y as u32)
                         }
@@ -445,7 +472,8 @@ impl Field {
                     v if v == Cell::Monster as u8 => MARKER_COLOR,
                     _ => [0x00, 0x00, 0x00, 0xff],
                 };
-                out.put_pixel(x as u32, y as u32, rgba);
+                let o = out_row + x as usize * 4;
+                out.data[o..o + 4].copy_from_slice(&rgba);
             }
         }
     }
