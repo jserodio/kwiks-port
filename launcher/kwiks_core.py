@@ -370,8 +370,13 @@ def create_link_shims(log: Log = _noop) -> int:
 # ---------------------------------------------------------------------------
 
 
-def build_project(log: Log = _noop, release: bool = True) -> int:
-    """Run ``cargo build`` in ``game/`` and stream its output to ``log``."""
+def build_project(log: Log = _noop, release: bool = True, verbose: bool = False) -> int:
+    """Run ``cargo build`` in ``game/``.
+
+    With ``verbose=False`` (the launcher's default) the output is condensed:
+    a progress counter while compiling and, on failure, the tail of the log.
+    ``--setup`` passes ``verbose=True`` to see everything.
+    """
     if not (game_dir() / "Cargo.toml").exists():
         log("Could not find the game source in this folder.")
         return 1
@@ -384,7 +389,6 @@ def build_project(log: Log = _noop, release: bool = True) -> int:
     cmd = ["cargo", "build"]
     if release:
         cmd.append("--release")
-    log("$ " + " ".join(cmd))
 
     try:
         proc = subprocess.Popen(
@@ -400,10 +404,24 @@ def build_project(log: Log = _noop, release: bool = True) -> int:
         return 1
 
     assert proc.stdout is not None
+    lines: list[str] = []
+    compiled = 0
     for line in proc.stdout:
-        log(line.rstrip("\n"))
+        lines.append(line.rstrip("\n"))
+        if verbose:
+            log(line.rstrip("\n"))
+        elif line.startswith("   Compiling") or line.startswith("   Building"):
+            compiled += 1
+            if compiled % 10 == 0:
+                log(f"  compiling ... {compiled} crates")
     proc.wait()
-    log(f"Build finished with exit code {proc.returncode}.")
+
+    if proc.returncode == 0:
+        log(f"Build finished OK ({compiled} crates compiled).")
+    else:
+        log("The build failed. The last lines of the compiler output:")
+        for line in lines[-40:]:
+            log("  " + line)
     return proc.returncode
 
 

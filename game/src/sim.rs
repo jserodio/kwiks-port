@@ -7,7 +7,7 @@
 //! rate the display wants (interpolating in M5).
 
 use crate::assets::RgbaImage;
-use crate::field::{Cell, Collision, Field};
+use crate::field::{Collision, Field};
 use std::collections::VecDeque;
 
 /// Duration of a logical step: 25 ms = 40 Hz, like the original.
@@ -20,7 +20,6 @@ pub struct InputState {
     pub down: bool,
     pub left: bool,
     pub right: bool,
-    pub draw: bool,
 }
 
 /// Events the simulation notifies to the presentation layer.
@@ -56,7 +55,7 @@ pub enum MonsterKind {
 /// types 1/2 (they always land on multiples of 8) and avoids duplicating logic.
 const SUBPIXEL: i32 = 8;
 
-struct Monster {
+pub struct Monster {
     kind: MonsterKind,
     /// Position in 1/8 of a pixel.
     x: i32,
@@ -78,11 +77,6 @@ impl Monster {
 
     fn py(&self) -> i32 {
         self.y / SUBPIXEL
-    }
-
-    /// Marker color: `0x7f00` types 1/3, `0x3e0` the worm.
-    fn marker(&self) -> Cell {
-        Cell::Monster
     }
 }
 
@@ -302,7 +296,7 @@ impl Sim {
         self.player_x = nx as f32;
         self.player_y = ny as f32;
 
-        let drawing = self.trail_start.is_some();
+        let drawing = self.field.trail_len() > 0;
         match self.field.collision(nx, ny) {
             Collision::Free => {
                 // Free zone: mark the line and record its start.
@@ -317,7 +311,7 @@ impl Sim {
                     self.pending_death = true;
                 }
             }
-            Collision::Closed | Collision::Image => {
+            Collision::Closed => {
                 // Returning to conquered zone while drawing ⇒ close the area.
                 if drawing {
                     if let Some(from) = self.trail_start.take() {
@@ -477,7 +471,7 @@ impl Sim {
 
     /// Extra life upon crossing every 5000 points (readme).
     pub fn check_extra_life(&mut self) {
-        let crossed = (self.score / 5000) as u32;
+        let crossed = (self.score / crate::extras::EXTRA_LIFE_SCORE_STEP) as u32;
         if crossed > self.extra_lives_awarded {
             self.extra_lives_awarded = crossed;
             self.lives += 1;
@@ -494,11 +488,6 @@ impl Sim {
         self.player_x = (self.field.width() / 2) as f32;
         self.player_y = 1.0;
         self.trail_start = None;
-    }
-
-    /// Advances to the next level keeping score and lives.
-    pub fn advance_level(&mut self, field: Field) {
-        self.set_level(self.level + 1, field);
     }
 
     /// Sets the level (e.g. when `screens` advances after the COMPLET
@@ -624,10 +613,6 @@ impl FixedStep {
         steps
     }
 
-    /// Fraction of the current step, to interpolate the render (M5).
-    pub fn alpha(&self) -> f64 {
-        self.accumulator / STEP
-    }
 }
 
 #[cfg(test)]
@@ -760,7 +745,7 @@ mod tests {
     #[test]
     fn monsters_write_markers_on_the_field() {
         // Rule C6: monsters exist for the field (they block and kill).
-        let mut s = sim_with_monsters();
+        let s = sim_with_monsters();
         assert!(!s.monsters.is_empty());
         let marked = (0..s.field.height())
             .flat_map(|y| (0..s.field.width()).map(move |x| (x, y)))
@@ -1074,7 +1059,7 @@ mod tests {
         ];
 
         let mut frame = 0u32;
-        let mut save_frame = |s: &Sim, shell: &mut Shell, frame: &mut u32| {
+        let save_frame = |s: &Sim, shell: &mut Shell, frame: &mut u32| {
             let mut out = RgbaImage::new(640, 480);
             // Field full-screen (frame included) + HUD on top with transparent
             // background, just like `main.rs`.

@@ -33,8 +33,6 @@ use screens::{Input, Screen, Shell, TickResult};
 use sim::{FixedStep, InputState, Sim};
 use video::InternalSize;
 
-/// Height of the HUD strip that `screens` reserves (640×22).
-const HUD_HEIGHT: u32 = 22;
 
 fn map_key(key: Keycode) -> Option<Input> {
     Some(match key {
@@ -81,7 +79,6 @@ impl Held {
             down: self.down,
             left: self.left,
             right: self.right,
-            draw: true,
         }
     }
 }

@@ -92,7 +92,6 @@ pub enum Input {
     Help,
     Options,
     Scores,
-    Quit,
 }
 
 /// Result of a screen tick: draw + possible transition.
@@ -145,17 +144,6 @@ impl Default for Language {
     }
 }
 
-/// Entry selected in the menu carousel (Menu1/2/3).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum SelectedEntry {
-    /// MENU1 — Enter starts the game (§1.2).
-    Start,
-    /// MENU2 — Enter opens the credits.
-    Credits,
-    /// MENU3 — Enter/Esc go to attract.
-    Attract,
-}
-
 /// Sub-mode of the [`Screen::Game`] screen.
 ///
 /// In the original "level complete" is **not** a separate handler: it is mode
@@ -190,9 +178,6 @@ const LEVEL_COMPLETE_PCT: u32 = 75;
 
 /// Number of rows on the options screen.
 const OPTION_ROWS: usize = 8;
-
-/// Top HUD strip: 640×22 object (`DAT_00460848`, §3.2). **[O]**
-const HUD_HEIGHT: u32 = 22;
 
 /// Duration of the DNLOGO → MAKERS wipe in the credits. **[I]**
 /// (`FUN_0040565c` performs the wipe.) NOTE(audit #24): the original sweeps
@@ -334,7 +319,7 @@ impl Shell {
             if self.help_visible
                 && !matches!(
                     input,
-                    Input::Help | Input::Music | Input::Sfx | Input::FastGraphics | Input::Quit
+                    Input::Help | Input::Music | Input::Sfx | Input::FastGraphics
                 )
             {
                 // The help is a modal MessageBox: any other key closes it
@@ -414,14 +399,6 @@ impl Shell {
     }
 
     /// Entry selected in the menus.
-    pub fn selected_entry(&self) -> SelectedEntry {
-        match self.screen {
-            Screen::Menu1 => SelectedEntry::Start,
-            Screen::Menu2 => SelectedEntry::Credits,
-            _ => SelectedEntry::Attract,
-        }
-    }
-
     /// Is there a pending menu click to play? (one-shot: it is consumed.)
     ///
     /// [O] the click (`FUN_004043c4`) sounds **only on the transitions of
@@ -521,8 +498,6 @@ impl Shell {
                 self.scores_return = self.screen;
                 return Ok(Action::Go(Screen::Scores));
             }
-            // Same as Esc in MENU2: `DAT_00429038 = 0` → end of the program.
-            Input::Quit => return Ok(Action::Quit),
             other => return self.handle_screen_key(other),
         }
         Ok(Action::None)
@@ -549,10 +524,10 @@ impl Shell {
             }
             3 => self.options.fullscreen = !self.options.fullscreen,
             4 => {
-                self.options.language = if self.options.language == "es" {
-                    "en".to_string()
-                } else {
-                    "es".to_string()
+                self.toggle_language();
+                self.options.language = match self.language {
+                    Language::Es => "es".to_string(),
+                    Language::En => "en".to_string(),
                 };
             }
             5 => self.options.music_on = !self.options.music_on,
@@ -2011,7 +1986,7 @@ mod tests {
         let dir = std::path::Path::new("/tmp/opencode/kwiks_shots");
         std::fs::create_dir_all(dir).unwrap();
 
-        let mut dump = |shell: &mut Shell, name: &str, input: Option<Input>| {
+        let dump = |shell: &mut Shell, name: &str, input: Option<Input>| {
             let mut out = buf();
             let _ = shell.tick(input, &mut out).unwrap();
             let path = dir.join(format!("{name}.png"));

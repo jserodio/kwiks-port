@@ -336,7 +336,7 @@ def setup(source: Optional[str]) -> int:
         print("Run again with the path to the game ZIP.")
         return 1
     print("Building the game …")
-    code = core.build_project(print, release=True)
+    code = core.build_project(print, release=True, verbose=True)
     if code == 0:
         print(f"\nAll done. The game is at: {core.built_binary()}")
     return code

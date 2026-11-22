@@ -53,8 +53,6 @@ pub enum Collision {
     Closed,
     /// `0x7f00` / `0x03e0` — monster marker.
     Monster,
-    /// other — already revealed image pixel.
-    Image,
 }
 
 /// Playfield.
@@ -418,17 +416,12 @@ impl Field {
 
     /// Fill percentage in the range 0.0..=1.0.
     pub fn fill_ratio(&self) -> f32 {
-        self.filled as f32 / self.total() as f32
+        self.filled() as f32 / self.total() as f32
     }
 
     /// `true` if the level threshold has been reached (75 % in the original).
     pub fn level_complete(&self) -> bool {
         self.fill_ratio() >= 0.75
-    }
-
-    /// Draws the field onto the framebuffer: conquered image + lines.
-    pub fn draw_into(&self, out: &mut RgbaImage) {
-        self.draw_playfield(out, 0);
     }
 
     /// Draws the field leaving the top strip `[0, y0)` free (where the shell
@@ -476,12 +469,6 @@ impl Field {
                 out.data[o..o + 4].copy_from_slice(&rgba);
             }
         }
-    }
-
-    /// `true` if the cell belongs to the 2 px frame painted in `new_playfield`.
-    fn is_frame(&self, x: i32, y: i32) -> bool {
-        let t = 2;
-        x < t || y < t || x >= self.width - t || y >= self.height - t
     }
 }
 
