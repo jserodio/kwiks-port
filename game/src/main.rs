@@ -132,6 +132,16 @@ fn main() -> Result<()> {
     let cfg_path = config::config_path();
     let mut cfg = Config::load(&cfg_path);
 
+    // Fail early with an actionable message instead of a bare I/O error.
+    if !assets::asset_path("data/titel.jpg").exists() {
+        anyhow::bail!(
+            "the game files are missing from {:?}\n\
+             Run the launcher and press 'Set up and build', or extract them\n\
+             with tools/extract_one.py (see README).",
+            assets::asset_path("")
+        );
+    }
+
     let size = video::internal_size((cfg.window_width, cfg.window_height), cfg.widescreen);
     let mut size = size;
 

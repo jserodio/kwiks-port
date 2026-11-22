@@ -18,7 +18,7 @@
 // wired up, we do not want dead_code warnings from partial use.
 #![allow(dead_code)]
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
 /// Palette size: 256 entries × (R, G, B).
@@ -366,7 +366,8 @@ pub const MONSTER_SPRITE: u32 = 100;
 /// sprite background does not leave a dark box over the field.
 pub fn monster_sprites() -> Result<Vec<RgbaImage>> {
     let path = asset_path("data/spiel.pix");
-    let bytes = std::fs::read(&path)?;
+    let bytes = std::fs::read(&path)
+        .with_context(|| format!("read {}", path.display()))?;
     let sheet = crate::assets::decode_pix_indexed(&bytes)?;
 
     let mut out = Vec::with_capacity(3);

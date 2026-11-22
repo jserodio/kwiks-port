@@ -259,8 +259,28 @@ class Launcher(tk.Tk):
 
         self._run_async(job, done=done)
 
+    def _ensure_assets(self) -> bool:
+        """Make sure the game files are installed before building or playing."""
+        ok, detail = core.assets_status()
+        if ok:
+            return True
+        self.append_log("The game files are not installed yet.")
+        if self.source_var.get().strip():
+            self.append_log("Installing them from the selected file first ...")
+            return self._extract()
+        messagebox.showinfo(
+            APP_TITLE,
+            "First choose the original game ZIP in step 1 "
+            "(the file you downloaded, for example Kwiks_Win_EN.zip).",
+        )
+        return False
+
     def _build(self) -> None:
-        self.build_label.configure(text="Building…", foreground="gray")
+        if self._busy:
+            return
+        if not self._ensure_assets():
+            return
+        self.build_label.configure(text="Building...", foreground="gray")
 
         def job():
             self.append_log("=== Building the game ===")
@@ -269,6 +289,8 @@ class Launcher(tk.Tk):
         self._run_async(job, done=self.refresh_all)
 
     def _play(self) -> None:
+        if not self._ensure_assets():
+            return
         if core.run_game(self.append_log) is None:
             messagebox.showinfo(APP_TITLE, "The game has not been built yet.")
             return

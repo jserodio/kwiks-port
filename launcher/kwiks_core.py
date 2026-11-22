@@ -425,6 +425,11 @@ def built_binary() -> Optional[Path]:
 
 
 def run_game(log: Log = _noop) -> Optional[subprocess.Popen]:
+    ok, detail = assets_status()
+    if not ok:
+        log(f"The game files are not installed ({detail}).")
+        log("Choose the original game ZIP and press Set up and build first.")
+        return None
     binary = built_binary()
     if binary is None:
         log("The game has not been built yet.")
