@@ -74,7 +74,10 @@ build_windows_cross() {
 
 package_launcher() {
     local host
-    host="$(uname -s | tr '[:upper:]' '[:lower:]')"
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*) host="windows" ;;
+        *) host="linux" ;;
+    esac
     local out="$DIST/kwiks-launcher-$host-x86_64"
 
     echo "==> Freezing the launcher with PyInstaller ($PYTHON)"
