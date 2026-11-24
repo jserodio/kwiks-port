@@ -1,6 +1,6 @@
 [package]
 name = "kwiks"
-version = "0.3.3"
+version = "0.4.0"
 edition = "2021"
 description = "Port moderno de Kwiks (1998) - M0: shell SDL3 con assets originales"
 
