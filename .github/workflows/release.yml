@@ -31,7 +31,7 @@ jobs:
         run: |
           dnf install -y gcc git curl tar \
                          SDL3-devel SDL3_image-devel libopenmpt-devel \
-                         python3 python3-tk python3-pip
+                         python3 python3-tkinter python3-pip
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -68,7 +68,7 @@ jobs:
           update: false
           install: >-
             mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-tools
+            mingw-w64-x86_64-binutils
             unzip
             curl
             tar
