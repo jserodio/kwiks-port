@@ -72,8 +72,10 @@ jobs:
             unzip
             curl
             tar
+            zip
             python
           path-type: inherit
+          suppress-deprecation-warnings: msystem-mingw64
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -89,7 +91,7 @@ jobs:
           python-version: "3.12"
 
       - name: Cross-compile the game
-        shell: bash
+        shell: msys2 {0}
         run: ./package.sh windows-local
 
       - name: Build the launcher

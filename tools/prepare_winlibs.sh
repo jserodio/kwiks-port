@@ -25,12 +25,23 @@ OPENMPT_VER="${OPENMPT_VER:-0.8.10}"
 say() { echo "==> $*"; }
 
 # --- MinGW tools -----------------------------------------------------------
-DLLTOOL="${MINGW_DLLTOOL:-$(command -v x86_64-w64-mingw32-dlltool || true)}"
-OBJDUMP="${MINGW_OBJDUMP:-$(command -v x86_64-w64-mingw32-objdump || true)}"
+# Linux/macOS package them with a target prefix; MSYS2 ships them unprefixed.
+find_tool() {
+    for name in "$@"; do
+        if command -v "$name" >/dev/null 2>&1; then
+            command -v "$name"
+            return 0
+        fi
+    done
+    return 1
+}
+
+DLLTOOL="${MINGW_DLLTOOL:-$(find_tool x86_64-w64-mingw32-dlltool dlltool || true)}"
+OBJDUMP="${MINGW_OBJDUMP:-$(find_tool x86_64-w64-mingw32-objdump objdump || true)}"
 if [ -z "$DLLTOOL" ] || [ -z "$OBJDUMP" ]; then
     echo "MinGW tools not found. Install mingw-w64, for example:" >&2
-    echo "  brew install mingw-w64      (Linux/macOS)" >&2
-    echo "  pacman -S mingw-w64-x86_64-tools   (MSYS2)" >&2
+    echo "  brew install mingw-w64                       (Linux/macOS)" >&2
+    echo "  pacman -S mingw-w64-x86_64-binutils          (MSYS2)" >&2
     exit 1
 fi
 
